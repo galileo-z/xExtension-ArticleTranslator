@@ -2,10 +2,14 @@
   "name": "ArticleTranslator",
   "author": "Codex",
   "description": "Translate FreshRSS article titles and content into Simplified Chinese paragraph by paragraph using OpenAI-compatible APIs, Ollama, Gemini, or LM Studio.",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "entrypoint": "ArticleTranslator",
   "type": "user",
   "changelog": {
+    "0.2.0": [
+      "Proxy AI translation requests through the FreshRSS server instead of calling AI APIs from the browser",
+      "Avoid browser CORS, mixed-content, and per-user localhost issues for shared FreshRSS accounts"
+    ],
     "0.1.7": [
       "Translate fallback text nodes in place so body text still appears under the matching source text"
     ],

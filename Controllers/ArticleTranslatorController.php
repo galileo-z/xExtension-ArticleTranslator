@@ -8,6 +8,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
   public function translateAction(): void
   {
     ob_start();
+    @set_time_limit(180);
     $this->view->_layout(false);
     header('Content-Type: application/json; charset=utf-8');
 
@@ -58,75 +59,35 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       return;
     }
 
-    $baseUrl = $this->normalizeBaseUrl((string)$baseUrl, (string)$provider);
     $userPrompt = $this->buildUserPrompt($kind, $text);
 
-    $successResponse = [
-      'response' => [
-        'data' => [
-          'oai_url' => $baseUrl . '/chat/completions',
-          'oai_key' => $apiKey,
-          'model' => $model,
-          'messages' => [
-            [
-              'role' => 'system',
-              'content' => $systemPrompt,
-            ],
-            [
-              'role' => 'user',
-              'content' => $userPrompt,
-            ],
-          ],
-          'max_tokens' => 2048,
-          'temperature' => 0.2,
-          'n' => 1,
-          'stream' => true,
-        ],
-        'provider' => $provider === 'lmstudio' ? 'lmstudio' : 'openai',
-        'error' => null,
-      ],
-      'status' => 200,
-    ];
+    try {
+      $translatedText = $this->translateWithProvider(
+        (string)$provider,
+        (string)$baseUrl,
+        (string)$apiKey,
+        (string)$model,
+        (string)$systemPrompt,
+        $userPrompt
+      );
 
-    if ($provider === 'ollama') {
-      $successResponse = [
+      $this->jsonResponse([
         'response' => [
-          'data' => [
-            'oai_url' => rtrim((string)$baseUrl, '/') . '/api/generate',
-            'oai_key' => $apiKey,
-            'model' => $model,
-            'system' => $systemPrompt,
-            'prompt' => $userPrompt,
-            'stream' => true,
-            'options' => [
-              'temperature' => 0.2,
-            ],
-          ],
-          'provider' => 'ollama',
+          'data' => $translatedText,
+          'provider' => $provider,
           'error' => null,
         ],
         'status' => 200,
-      ];
-    }
-
-    if ($provider === 'gemini') {
-      $successResponse = [
+      ]);
+    } catch (Throwable $error) {
+      $this->jsonResponse([
         'response' => [
-          'data' => [
-            'oai_url' => rtrim((string)$baseUrl, '/') . '/models/' . $model . ':streamGenerateContent',
-            'oai_key' => $apiKey,
-            'model' => $model,
-            'systemInstruction' => $systemPrompt,
-            'prompt' => $userPrompt,
-          ],
-          'provider' => 'gemini',
-          'error' => null,
+          'data' => $error->getMessage(),
+          'error' => 'ai_api',
         ],
         'status' => 200,
-      ];
+      ]);
     }
-
-    $this->jsonResponse($successResponse);
   }
 
   /**
@@ -174,6 +135,135 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     return in_array($provider, ['ollama', 'lmstudio'], true);
   }
 
+  private function translateWithProvider(
+    string $provider,
+    string $baseUrl,
+    string $apiKey,
+    string $model,
+    string $systemPrompt,
+    string $userPrompt
+  ): string {
+    if ($provider === 'ollama') {
+      return $this->translateOllama($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+    }
+
+    if ($provider === 'gemini') {
+      return $this->translateGemini($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+    }
+
+    return $this->translateOpenAiCompatible($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+  }
+
+  private function translateOpenAiCompatible(
+    string $baseUrl,
+    string $apiKey,
+    string $model,
+    string $systemPrompt,
+    string $userPrompt
+  ): string {
+    $headers = ['Content-Type: application/json'];
+    if (trim($apiKey) !== '') {
+      $headers[] = 'Authorization: Bearer ' . $apiKey;
+    }
+
+    $json = $this->postJson($this->normalizeBaseUrl($baseUrl, 'openai') . '/chat/completions', [
+      'model' => $model,
+      'messages' => [
+        [
+          'role' => 'system',
+          'content' => $systemPrompt,
+        ],
+        [
+          'role' => 'user',
+          'content' => $userPrompt,
+        ],
+      ],
+      'max_tokens' => 2048,
+      'temperature' => 0.2,
+      'n' => 1,
+      'stream' => false,
+    ], $headers);
+
+    $content = $json['choices'][0]['message']['content'] ?? null;
+    if (!is_string($content) || trim($content) === '') {
+      throw new RuntimeException('AI API response did not include translated text');
+    }
+
+    return $content;
+  }
+
+  private function translateOllama(
+    string $baseUrl,
+    string $apiKey,
+    string $model,
+    string $systemPrompt,
+    string $userPrompt
+  ): string {
+    $headers = ['Content-Type: application/json'];
+    if (trim($apiKey) !== '') {
+      $headers[] = 'Authorization: Bearer ' . $apiKey;
+    }
+
+    $json = $this->postJson(rtrim(trim($baseUrl), '/') . '/api/generate', [
+      'model' => $model,
+      'system' => $systemPrompt,
+      'prompt' => $userPrompt,
+      'stream' => false,
+      'options' => [
+        'temperature' => 0.2,
+      ],
+    ], $headers);
+
+    $content = $json['response'] ?? null;
+    if (!is_string($content) || trim($content) === '') {
+      throw new RuntimeException('Ollama response did not include translated text');
+    }
+
+    return $content;
+  }
+
+  private function translateGemini(
+    string $baseUrl,
+    string $apiKey,
+    string $model,
+    string $systemPrompt,
+    string $userPrompt
+  ): string {
+    $url = $this->normalizeBaseUrl($baseUrl, 'gemini') . '/models/' . rawurlencode($model) . ':generateContent';
+    if (trim($apiKey) !== '') {
+      $url .= '?key=' . rawurlencode($apiKey);
+    }
+
+    $json = $this->postJson($url, [
+      'systemInstruction' => [
+        'parts' => [['text' => $systemPrompt]],
+      ],
+      'contents' => [
+        [
+          'parts' => [['text' => $userPrompt]],
+        ],
+      ],
+    ], ['Content-Type: application/json']);
+
+    $parts = $json['candidates'][0]['content']['parts'] ?? null;
+    if (!is_array($parts)) {
+      throw new RuntimeException('Gemini response did not include translated text');
+    }
+
+    $content = '';
+    foreach ($parts as $part) {
+      if (isset($part['text']) && is_string($part['text'])) {
+        $content .= $part['text'];
+      }
+    }
+
+    if (trim($content) === '') {
+      throw new RuntimeException('Gemini response did not include translated text');
+    }
+
+    return $content;
+  }
+
   private function normalizeBaseUrl(string $baseUrl, string $provider): string
   {
     $baseUrl = rtrim(trim($baseUrl), '/');
@@ -195,6 +285,101 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     }
 
     return $baseUrl . '/v1';
+  }
+
+  /**
+   * @param array<string, mixed> $body
+   * @param string[] $headers
+   * @return array<string, mixed>
+   */
+  private function postJson(string $url, array $body, array $headers): array
+  {
+    $requestBody = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($requestBody === false) {
+      throw new RuntimeException('Failed to encode AI API request');
+    }
+
+    $responseBody = '';
+    $statusCode = 0;
+
+    if (function_exists('curl_init')) {
+      $ch = curl_init($url);
+      if ($ch === false) {
+        throw new RuntimeException('Failed to initialize HTTP client');
+      }
+
+      curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $requestBody,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 180,
+      ]);
+
+      $responseBody = curl_exec($ch);
+      $statusCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $curlError = curl_error($ch);
+      curl_close($ch);
+
+      if ($responseBody === false) {
+        throw new RuntimeException('AI API request failed: ' . $curlError);
+      }
+    } else {
+      $context = stream_context_create([
+        'http' => [
+          'method' => 'POST',
+          'header' => implode("\r\n", $headers),
+          'content' => $requestBody,
+          'ignore_errors' => true,
+          'timeout' => 180,
+        ],
+      ]);
+
+      $responseBody = file_get_contents($url, false, $context);
+      if ($responseBody === false) {
+        throw new RuntimeException('AI API request failed');
+      }
+
+      $statusCode = $this->statusCodeFromHeaders($http_response_header ?? []);
+    }
+
+    if ($statusCode < 200 || $statusCode >= 300) {
+      throw new RuntimeException('AI API returned HTTP ' . $statusCode . ': ' . $this->responseErrorMessage($responseBody));
+    }
+
+    $json = json_decode($responseBody, true);
+    if (!is_array($json)) {
+      throw new RuntimeException('AI API returned invalid JSON: ' . substr($responseBody, 0, 500));
+    }
+
+    return $json;
+  }
+
+  /**
+   * @param string[] $headers
+   */
+  private function statusCodeFromHeaders(array $headers): int
+  {
+    foreach ($headers as $header) {
+      if (preg_match('/^HTTP\/\S+\s+(\d+)/', $header, $matches)) {
+        return (int)$matches[1];
+      }
+    }
+
+    return 0;
+  }
+
+  private function responseErrorMessage(string $responseBody): string
+  {
+    $json = json_decode($responseBody, true);
+    if (is_array($json)) {
+      $message = $json['error']['message'] ?? $json['message'] ?? $json['error'] ?? null;
+      if (is_string($message) && $message !== '') {
+        return $message;
+      }
+    }
+
+    return substr($responseBody, 0, 500);
   }
 
   private function normalizeKind(string $kind): string

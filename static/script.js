@@ -445,20 +445,12 @@
   }
 
   async function translateSegment(button, segment, onText) {
-    var prepared = await requestProviderParams(button, segment);
-
-    if (prepared.provider === 'openai' || prepared.provider === 'lmstudio') {
-      return sendOpenAIRequest(prepared.params, onText);
-    }
-
-    if (prepared.provider === 'gemini') {
-      return sendGeminiRequest(prepared.params, onText);
-    }
-
-    return sendOllamaRequest(prepared.params, onText);
+    var translatedText = await requestTranslatedText(button, segment);
+    onText(translatedText);
+    return translatedText;
   }
 
-  async function requestProviderParams(button, segment) {
+  async function requestTranslatedText(button, segment) {
     var requestUrl = decodeHtmlEntities(button.dataset.request || '');
     var response;
     try {
@@ -488,14 +480,11 @@
       throw new Error(xresp.response.data || xresp.response.error);
     }
 
-    if (!xresp.response.data || !xresp.response.provider) {
+    if (!xresp.response.data) {
       throw new Error(button.dataset.requestFailedText || 'Request Failed');
     }
 
-    return {
-      params: xresp.response.data,
-      provider: xresp.response.provider
-    };
+    return String(xresp.response.data || '');
   }
 
   function decodeHtmlEntities(value) {
@@ -513,216 +502,4 @@
     return decoded;
   }
 
-  async function sendOpenAIRequest(oaiParams, onText) {
-    var body = JSON.parse(JSON.stringify(oaiParams));
-    delete body.oai_url;
-    delete body.oai_key;
-    body.stream = true;
-
-    var headers = {
-      'Content-Type': 'application/json'
-    };
-
-    if (oaiParams.oai_key && oaiParams.oai_key.trim() !== '') {
-      headers.Authorization = 'Bearer ' + oaiParams.oai_key;
-    }
-
-    var response = await fetch(oaiParams.oai_url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
-    }
-
-    var contentType = response.headers.get('content-type') || '';
-    if (contentType.indexOf('application/json') !== -1 && contentType.indexOf('stream') === -1) {
-      var json = await response.json();
-      var jsonText = json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : '';
-      onText(jsonText || '');
-      return jsonText || '';
-    }
-
-    var reader = response.body.getReader();
-    var decoder = new TextDecoder('utf-8');
-    var text = '';
-    var buffer = '';
-
-    while (true) {
-      var chunk = await reader.read();
-      if (chunk.done) {
-        break;
-      }
-
-      buffer += decoder.decode(chunk.value, { stream: true });
-      var endIndex;
-      while ((endIndex = buffer.indexOf('\n')) !== -1) {
-        var line = buffer.slice(0, endIndex).trim();
-        buffer = buffer.slice(endIndex + 1);
-
-        if (!line || line === 'data: [DONE]') {
-          continue;
-        }
-
-        if (line.indexOf('data: ') === 0) {
-          var jsonString = line.slice(6).trim();
-          try {
-            var data = JSON.parse(jsonString);
-            var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
-            if (delta && delta.content) {
-              text += delta.content;
-              onText(text);
-            }
-          } catch (error) {
-            console.error('Error parsing OpenAI response:', error, 'Line:', jsonString);
-          }
-        }
-      }
-    }
-
-    return text;
-  }
-
-  async function sendOllamaRequest(oaiParams, onText) {
-    var body = JSON.parse(JSON.stringify(oaiParams));
-    delete body.oai_url;
-    delete body.oai_key;
-
-    var headers = {
-      'Content-Type': 'application/json'
-    };
-
-    if (oaiParams.oai_key && oaiParams.oai_key.trim() !== '') {
-      headers.Authorization = 'Bearer ' + oaiParams.oai_key;
-    }
-
-    var response = await fetch(oaiParams.oai_url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
-    }
-
-    var reader = response.body.getReader();
-    var decoder = new TextDecoder('utf-8');
-    var text = '';
-    var buffer = '';
-
-    while (true) {
-      var chunk = await reader.read();
-      if (chunk.done) {
-        break;
-      }
-
-      buffer += decoder.decode(chunk.value, { stream: true });
-      var endIndex;
-      while ((endIndex = buffer.indexOf('\n')) !== -1) {
-        var jsonString = buffer.slice(0, endIndex).trim();
-        buffer = buffer.slice(endIndex + 1);
-
-        if (!jsonString) {
-          continue;
-        }
-
-        try {
-          var data = JSON.parse(jsonString);
-          if (data.response) {
-            text += data.response;
-            onText(text);
-          }
-        } catch (error) {
-          console.error('Error parsing Ollama response:', error, 'Line:', jsonString);
-        }
-      }
-    }
-
-    return text;
-  }
-
-  async function sendGeminiRequest(oaiParams, onText) {
-    var url = oaiParams.oai_url + '?key=' + encodeURIComponent(oaiParams.oai_key || '') + '&alt=sse';
-    var body = {
-      systemInstruction: {
-        parts: [{ text: oaiParams.systemInstruction }]
-      },
-      contents: [{
-        parts: [{ text: oaiParams.prompt }]
-      }]
-    };
-
-    var response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
-    }
-
-    var reader = response.body.getReader();
-    var decoder = new TextDecoder('utf-8');
-    var text = '';
-    var buffer = '';
-
-    while (true) {
-      var chunk = await reader.read();
-      if (chunk.done) {
-        break;
-      }
-
-      buffer += decoder.decode(chunk.value, { stream: true });
-      var endIndex;
-      while ((endIndex = buffer.indexOf('\n')) !== -1) {
-        var line = buffer.slice(0, endIndex).trim();
-        buffer = buffer.slice(endIndex + 1);
-
-        if (!line || line.indexOf('data: ') !== 0) {
-          continue;
-        }
-
-        var jsonString = line.slice(6).trim();
-        try {
-          var data = JSON.parse(jsonString);
-          var parts = data.candidates && data.candidates[0] && data.candidates[0].content
-            ? data.candidates[0].content.parts
-            : null;
-          var chunkText = parts && parts[0] ? parts[0].text : '';
-          if (chunkText) {
-            text += chunkText;
-            onText(text);
-          }
-        } catch (error) {
-          console.error('Error parsing Gemini response:', error, 'Line:', jsonString);
-        }
-      }
-    }
-
-    return text;
-  }
-
-  async function responseErrorMessage(response) {
-    var fallback = response.statusText || 'Request Failed';
-    var bodyText = await response.text().catch(function () {
-      return '';
-    });
-
-    if (!bodyText) {
-      return fallback;
-    }
-
-    try {
-      var data = JSON.parse(bodyText);
-      return (data.error && data.error.message) || data.error || data.message || fallback;
-    } catch (error) {
-      return bodyText || fallback;
-    }
-  }
 })();

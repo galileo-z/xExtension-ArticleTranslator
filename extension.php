@@ -6,11 +6,10 @@
 final class ArticleTranslatorExtension extends Minz_Extension
 {
   /**
-   * AI providers are called directly by the browser, matching the reference extension.
+   * AI requests are proxied by the FreshRSS server, so the browser does not
+   * need extra external CSP permissions for model providers.
    */
-  protected array $csp_policies = [
-    'default-src' => '*',
-  ];
+  protected array $csp_policies = [];
 
   #[\Override]
   public function init(): void
