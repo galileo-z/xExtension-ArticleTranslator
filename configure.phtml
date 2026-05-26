@@ -26,6 +26,9 @@ $escape = static function (mixed $value): string {
     <option value="lmstudio" <?php echo ($provider === 'lmstudio' ? 'selected' : ''); ?>>
       <?php echo _t('ArticleTranslator.config.lmstudio'); ?>
     </option>
+    <option value="google" <?php echo ($provider === 'google' ? 'selected' : ''); ?>>
+      <?php echo _t('ArticleTranslator.config.google'); ?>
+    </option>
   </select>
 
   <label for="article_translator_oai_url"><?php echo _t('ArticleTranslator.config.base_url'); ?></label>

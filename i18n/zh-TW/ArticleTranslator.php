@@ -13,6 +13,7 @@ return [
     'ollama' => 'Ollama',
     'gemini' => 'Gemini',
     'lmstudio' => 'LM Studio',
+    'google' => 'Google 翻譯',
   ],
   'button' => [
     'translate' => '翻譯為中文',

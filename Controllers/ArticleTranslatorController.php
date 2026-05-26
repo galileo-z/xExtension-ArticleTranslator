@@ -20,12 +20,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     $model = FreshRSS_Context::$user_conf->article_translator_oai_model;
     $systemPrompt = FreshRSS_Context::$user_conf->article_translator_prompt;
 
-    if (
-      $this->isEmpty($baseUrl)
-      || ($this->isEmpty($apiKey) && !$this->allowsEmptyApiKey($provider))
-      || $this->isEmpty($model)
-      || $this->isEmpty($systemPrompt)
-    ) {
+    if (!$this->hasRequiredConfig($provider, $baseUrl, $apiKey, $model, $systemPrompt)) {
       $this->jsonResponse([
         'response' => [
           'data' => _t('ArticleTranslator.error.missing_config'),
@@ -68,7 +63,8 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
         (string)$apiKey,
         (string)$model,
         (string)$systemPrompt,
-        $userPrompt
+        $userPrompt,
+        $text
       );
 
       $this->jsonResponse([
@@ -132,7 +128,24 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
 
   private function allowsEmptyApiKey(string $provider): bool
   {
-    return in_array($provider, ['ollama', 'lmstudio'], true);
+    return in_array($provider, ['ollama', 'lmstudio', 'google'], true);
+  }
+
+  private function hasRequiredConfig(
+    string $provider,
+    mixed $baseUrl,
+    mixed $apiKey,
+    mixed $model,
+    mixed $systemPrompt
+  ): bool {
+    if ($provider === 'google') {
+      return true;
+    }
+
+    return !$this->isEmpty($baseUrl)
+      && (!$this->isEmpty($apiKey) || $this->allowsEmptyApiKey($provider))
+      && !$this->isEmpty($model)
+      && !$this->isEmpty($systemPrompt);
   }
 
   private function translateWithProvider(
@@ -141,8 +154,13 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     string $apiKey,
     string $model,
     string $systemPrompt,
-    string $userPrompt
+    string $userPrompt,
+    string $sourceText
   ): string {
+    if ($provider === 'google') {
+      return $this->translateGoogle($baseUrl, $sourceText);
+    }
+
     if ($provider === 'ollama') {
       return $this->translateOllama($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
     }
@@ -187,6 +205,44 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     $content = $json['choices'][0]['message']['content'] ?? null;
     if (!is_string($content) || trim($content) === '') {
       throw new RuntimeException('AI API response did not include translated text');
+    }
+
+    return $content;
+  }
+
+  private function translateGoogle(string $baseUrl, string $sourceText): string
+  {
+    $url = trim($baseUrl) === ''
+      ? 'https://translate.googleapis.com/translate_a/single'
+      : rtrim(trim($baseUrl), '/');
+    if (!preg_match('#/translate_a/single$#', $url)) {
+      $url .= '/translate_a/single';
+    }
+
+    $json = $this->getJson($url, [
+      'client' => 'gtx',
+      'sl' => 'auto',
+      'tl' => 'zh-CN',
+      'dt' => 't',
+      'q' => $sourceText,
+    ], [
+      'Accept: application/json',
+    ]);
+
+    $segments = $json[0] ?? null;
+    if (!is_array($segments)) {
+      throw new RuntimeException('Google Translate response did not include translated text');
+    }
+
+    $content = '';
+    foreach ($segments as $segment) {
+      if (is_array($segment) && isset($segment[0]) && is_string($segment[0])) {
+        $content .= $segment[0];
+      }
+    }
+
+    if (trim($content) === '') {
+      throw new RuntimeException('Google Translate response did not include translated text');
     }
 
     return $content;
@@ -350,6 +406,70 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     $json = json_decode($responseBody, true);
     if (!is_array($json)) {
       throw new RuntimeException('AI API returned invalid JSON: ' . substr($responseBody, 0, 500));
+    }
+
+    return $json;
+  }
+
+  /**
+   * @param array<string, scalar|null> $query
+   * @param string[] $headers
+   * @return array<string|int, mixed>
+   */
+  private function getJson(string $url, array $query, array $headers): array
+  {
+    $separator = str_contains($url, '?') ? '&' : '?';
+    $requestUrl = $url . $separator . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    $responseBody = '';
+    $statusCode = 0;
+
+    if (function_exists('curl_init')) {
+      $ch = curl_init($requestUrl);
+      if ($ch === false) {
+        throw new RuntimeException('Failed to initialize HTTP client');
+      }
+
+      curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 180,
+        CURLOPT_USERAGENT => 'FreshRSS ArticleTranslator',
+      ]);
+
+      $responseBody = curl_exec($ch);
+      $statusCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $curlError = curl_error($ch);
+      curl_close($ch);
+
+      if ($responseBody === false) {
+        throw new RuntimeException('Google Translate request failed: ' . $curlError);
+      }
+    } else {
+      $context = stream_context_create([
+        'http' => [
+          'method' => 'GET',
+          'header' => implode("\r\n", $headers),
+          'ignore_errors' => true,
+          'timeout' => 180,
+          'user_agent' => 'FreshRSS ArticleTranslator',
+        ],
+      ]);
+
+      $responseBody = file_get_contents($requestUrl, false, $context);
+      if ($responseBody === false) {
+        throw new RuntimeException('Google Translate request failed');
+      }
+
+      $statusCode = $this->statusCodeFromHeaders($http_response_header ?? []);
+    }
+
+    if ($statusCode < 200 || $statusCode >= 300) {
+      throw new RuntimeException('Google Translate returned HTTP ' . $statusCode . ': ' . $this->responseErrorMessage($responseBody));
+    }
+
+    $json = json_decode($responseBody, true);
+    if (!is_array($json)) {
+      throw new RuntimeException('Google Translate returned invalid JSON: ' . substr($responseBody, 0, 500));
     }
 
     return $json;

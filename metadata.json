@@ -1,11 +1,15 @@
 {
   "name": "ArticleTranslator",
   "author": "Codex",
-  "description": "Translate FreshRSS article titles and content into Simplified Chinese paragraph by paragraph using OpenAI-compatible APIs, Ollama, Gemini, or LM Studio.",
-  "version": "0.2.0",
+  "description": "Translate FreshRSS article titles and content into Simplified Chinese paragraph by paragraph using OpenAI-compatible APIs, Ollama, Gemini, LM Studio, or Google Translate.",
+  "version": "0.2.1",
   "entrypoint": "ArticleTranslator",
   "type": "user",
   "changelog": {
+    "0.2.1": [
+      "Add Google Translate as a translation provider",
+      "Allow Google Translate to run without AI base URL, API key, model, or system prompt configuration"
+    ],
     "0.2.0": [
       "Proxy AI translation requests through the FreshRSS server instead of calling AI APIs from the browser",
       "Avoid browser CORS, mixed-content, and per-user localhost issues for shared FreshRSS accounts"
