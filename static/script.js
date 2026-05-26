@@ -1,0 +1,594 @@
+(function () {
+  if (document.readyState && document.readyState !== 'loading') {
+    configureArticleTranslator();
+  } else {
+    document.addEventListener('DOMContentLoaded', configureArticleTranslator, false);
+  }
+
+  function configureArticleTranslator() {
+    var root = document.getElementById('global') || document.body;
+    if (!root || root.dataset.oaiTranslatorBound === 'true') {
+      return;
+    }
+
+    root.dataset.oaiTranslatorBound = 'true';
+    root.addEventListener('click', function (event) {
+      for (var target = event.target; target && target !== this; target = target.parentNode) {
+        if (target.matches && target.matches('.oai-translation-btn')) {
+          event.preventDefault();
+          event.stopPropagation();
+          translateArticle(target);
+          break;
+        }
+      }
+    }, false);
+  }
+
+  async function translateArticle(button) {
+    var container = button.closest('.oai-translation-wrap');
+    if (!container || container.classList.contains('oai-loading')) {
+      return;
+    }
+
+    clearGeneratedTranslations(container);
+
+    var segments = collectSegments(container);
+    if (segments.length === 0) {
+      setContainerState(container, 2, button.dataset.noContentText || 'No translatable content');
+      return;
+    }
+
+    var loadingText = button.dataset.loadingText || 'Translating...';
+    var doneText = button.dataset.doneText || 'Done';
+    setContainerState(container, 1, loadingText + ' 0/' + segments.length);
+
+    for (var i = 0; i < segments.length; i++) {
+      var segment = segments[i];
+      var block = insertTranslationBlock(segment, button.dataset.resultLabel || 'Chinese translation');
+      setBlockState(block, 'loading', loadingText);
+      setContainerState(container, 1, loadingText + ' ' + (i + 1) + '/' + segments.length);
+
+      try {
+        var translatedText = await translateSegment(button, segment, function (partialText) {
+          setBlockText(block, partialText);
+        });
+        setBlockText(block, translatedText);
+        setBlockState(block, 'done', null);
+      } catch (error) {
+        console.error(error);
+        var message = error.message || button.dataset.requestFailedText || 'Request Failed';
+        setBlockState(block, 'error', message);
+        setContainerState(container, 2, message);
+        return;
+      }
+    }
+
+    setContainerState(container, 0, doneText + ' (' + segments.length + ')');
+  }
+
+  function collectSegments(container) {
+    var segments = [];
+    var header = findFluxHeader(container);
+    var titleNode = findTitleNode(header);
+
+    if (titleNode) {
+      var titleText = readNodeText(titleNode);
+      if (isUsefulText(titleText)) {
+        segments.push({
+          kind: 'title',
+          source: titleNode,
+          text: titleText
+        });
+      }
+    } else if (isUsefulText(container.dataset.entryTitle || '')) {
+      segments.push({
+        kind: 'title',
+        source: container,
+        text: container.dataset.entryTitle
+      });
+    }
+
+    var articleBody = container.parentElement;
+    if (!articleBody) {
+      return segments;
+    }
+
+    var nodes = Array.prototype.slice.call(articleBody.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, li'));
+    nodes.forEach(function (node) {
+      if (!isEligibleContentNode(node, container)) {
+        return;
+      }
+
+      var text = readNodeText(node);
+      if (!isUsefulText(text)) {
+        return;
+      }
+
+      segments.push({
+        kind: kindForNode(node),
+        source: node,
+        text: text
+      });
+    });
+
+    if (segments.length === (titleNode ? 1 : 0)) {
+      addFallbackBodySegments(segments, articleBody, container);
+    }
+
+    return segments;
+  }
+
+  function addFallbackBodySegments(segments, articleBody, container) {
+    var children = Array.prototype.slice.call(articleBody.children);
+    children.forEach(function (child) {
+      if (child === container || !isEligibleContentNode(child, container)) {
+        return;
+      }
+
+      if (child.querySelector('p, h1, h2, h3, h4, h5, h6, blockquote, li')) {
+        return;
+      }
+
+      var text = readNodeText(child);
+      if (!isUsefulText(text)) {
+        return;
+      }
+
+      segments.push({
+        kind: kindForNode(child),
+        source: child,
+        text: text
+      });
+    });
+  }
+
+  function isEligibleContentNode(node, container) {
+    if (!node || container.contains(node)) {
+      return false;
+    }
+
+    if (node.closest('.oai-translation-wrap, .oai-translation-result, script, style, noscript, pre, code')) {
+      return false;
+    }
+
+    if (node.matches('blockquote') && node.querySelector('p, h1, h2, h3, h4, h5, h6, li')) {
+      return false;
+    }
+
+    if (node.matches('li') && node.querySelector('p, h1, h2, h3, h4, h5, h6, blockquote')) {
+      return false;
+    }
+
+    return node.getClientRects().length > 0;
+  }
+
+  function findFluxHeader(container) {
+    var articleBody = container.parentElement;
+    if (articleBody && articleBody.previousElementSibling && articleBody.previousElementSibling.matches('.flux_header')) {
+      return articleBody.previousElementSibling;
+    }
+
+    var article = container.closest('.flux, article, .entry');
+    if (article) {
+      return article.querySelector('.flux_header, header');
+    }
+
+    return null;
+  }
+
+  function findTitleNode(header) {
+    if (!header) {
+      return null;
+    }
+
+    var selectors = [
+      '.item.title a',
+      '.item.title',
+      '.title a',
+      '.title',
+      'h1 a',
+      'h1',
+      'h2 a',
+      'h2',
+      'a'
+    ];
+
+    for (var i = 0; i < selectors.length; i++) {
+      var node = header.querySelector(selectors[i]);
+      if (node && isUsefulText(readNodeText(node))) {
+        return node;
+      }
+    }
+
+    var candidates = Array.prototype.slice.call(header.querySelectorAll('a, h1, h2, h3, .title'));
+    candidates.sort(function (a, b) {
+      return readNodeText(b).length - readNodeText(a).length;
+    });
+
+    return candidates[0] || null;
+  }
+
+  function readNodeText(node) {
+    var clone = node.cloneNode(true);
+    Array.prototype.slice.call(clone.querySelectorAll('.oai-translation-result, script, style, noscript')).forEach(function (child) {
+      child.remove();
+    });
+
+    return normalizeText(clone.textContent || '');
+  }
+
+  function normalizeText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isUsefulText(text) {
+    return text.length > 1 && /[A-Za-z0-9\u00C0-\uFFFF]/.test(text);
+  }
+
+  function kindForNode(node) {
+    var tagName = node.tagName ? node.tagName.toLowerCase() : '';
+    if (/^h[1-6]$/.test(tagName)) {
+      return 'heading';
+    }
+    if (tagName === 'li') {
+      return 'list_item';
+    }
+    if (tagName === 'blockquote') {
+      return 'quote';
+    }
+    return 'paragraph';
+  }
+
+  function insertTranslationBlock(segment, label) {
+    var block = document.createElement('div');
+    block.className = 'oai-translation-result oai-translation-loading';
+    block.dataset.oaiGenerated = 'true';
+
+    if (segment.kind === 'title') {
+      block.classList.add('oai-title-translation');
+    }
+
+    var labelNode = document.createElement('div');
+    labelNode.className = 'oai-translation-label';
+    labelNode.textContent = label;
+
+    var textNode = document.createElement('div');
+    textNode.className = 'oai-translation-text';
+
+    block.appendChild(labelNode);
+    block.appendChild(textNode);
+
+    if (segment.source.matches && segment.source.matches('li')) {
+      segment.source.appendChild(block);
+    } else if (segment.kind === 'title') {
+      titleInsertAnchor(segment.source).insertAdjacentElement('afterend', block);
+    } else {
+      segment.source.insertAdjacentElement('afterend', block);
+    }
+
+    return block;
+  }
+
+  function titleInsertAnchor(node) {
+    return node.closest('.item.title, .title') || node;
+  }
+
+  function clearGeneratedTranslations(container) {
+    var articleBody = container.parentElement;
+    if (articleBody) {
+      Array.prototype.slice.call(articleBody.querySelectorAll('.oai-translation-result[data-oai-generated="true"]')).forEach(function (node) {
+        node.remove();
+      });
+    }
+
+    var header = findFluxHeader(container);
+    if (header) {
+      Array.prototype.slice.call(header.querySelectorAll('.oai-translation-result[data-oai-generated="true"]')).forEach(function (node) {
+        node.remove();
+      });
+    }
+  }
+
+  function setContainerState(container, statusType, statusMessage) {
+    var button = container.querySelector('.oai-translation-btn');
+    var status = container.querySelector('.oai-translation-status');
+
+    if (statusType === 1) {
+      container.classList.add('oai-loading');
+      container.classList.remove('oai-error');
+      button.disabled = true;
+    } else if (statusType === 2) {
+      container.classList.remove('oai-loading');
+      container.classList.add('oai-error');
+      button.disabled = false;
+    } else {
+      container.classList.remove('oai-loading');
+      container.classList.remove('oai-error');
+      button.disabled = false;
+    }
+
+    status.textContent = statusMessage || '';
+  }
+
+  function setBlockState(block, state, message) {
+    block.classList.remove('oai-translation-loading', 'oai-translation-error', 'oai-translation-done');
+    block.classList.add('oai-translation-' + state);
+
+    if (message) {
+      block.querySelector('.oai-translation-text').textContent = message;
+    }
+  }
+
+  function setBlockText(block, text) {
+    var content = block.querySelector('.oai-translation-text');
+    if (!content) {
+      return;
+    }
+
+    block.classList.remove('oai-translation-loading', 'oai-translation-error');
+
+    if (window.marked && window.marked.parse) {
+      content.innerHTML = window.marked.parse(text || '');
+    } else {
+      content.textContent = text || '';
+    }
+  }
+
+  async function translateSegment(button, segment, onText) {
+    var prepared = await requestProviderParams(button, segment);
+
+    if (prepared.provider === 'openai' || prepared.provider === 'lmstudio') {
+      return sendOpenAIRequest(prepared.params, onText);
+    }
+
+    if (prepared.provider === 'gemini') {
+      return sendGeminiRequest(prepared.params, onText);
+    }
+
+    return sendOllamaRequest(prepared.params, onText);
+  }
+
+  async function requestProviderParams(button, segment) {
+    var response = await axios.post(button.dataset.request, {
+      ajax: true,
+      _csrf: context.csrf,
+      kind: segment.kind,
+      text: segment.text
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    var xresp = response.data;
+    if (response.status !== 200 || !xresp || !xresp.response) {
+      throw new Error(button.dataset.requestFailedText || 'Request Failed');
+    }
+
+    if (xresp.response.error) {
+      throw new Error(xresp.response.data || xresp.response.error);
+    }
+
+    if (!xresp.response.data || !xresp.response.provider) {
+      throw new Error(button.dataset.requestFailedText || 'Request Failed');
+    }
+
+    return {
+      params: xresp.response.data,
+      provider: xresp.response.provider
+    };
+  }
+
+  async function sendOpenAIRequest(oaiParams, onText) {
+    var body = JSON.parse(JSON.stringify(oaiParams));
+    delete body.oai_url;
+    delete body.oai_key;
+    body.stream = true;
+
+    var headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (oaiParams.oai_key && oaiParams.oai_key.trim() !== '') {
+      headers.Authorization = 'Bearer ' + oaiParams.oai_key;
+    }
+
+    var response = await fetch(oaiParams.oai_url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(await responseErrorMessage(response));
+    }
+
+    var contentType = response.headers.get('content-type') || '';
+    if (contentType.indexOf('application/json') !== -1 && contentType.indexOf('stream') === -1) {
+      var json = await response.json();
+      var jsonText = json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : '';
+      onText(jsonText || '');
+      return jsonText || '';
+    }
+
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var text = '';
+    var buffer = '';
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var endIndex;
+      while ((endIndex = buffer.indexOf('\n')) !== -1) {
+        var line = buffer.slice(0, endIndex).trim();
+        buffer = buffer.slice(endIndex + 1);
+
+        if (!line || line === 'data: [DONE]') {
+          continue;
+        }
+
+        if (line.indexOf('data: ') === 0) {
+          var jsonString = line.slice(6).trim();
+          try {
+            var data = JSON.parse(jsonString);
+            var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
+            if (delta && delta.content) {
+              text += delta.content;
+              onText(text);
+            }
+          } catch (error) {
+            console.error('Error parsing OpenAI response:', error, 'Line:', jsonString);
+          }
+        }
+      }
+    }
+
+    return text;
+  }
+
+  async function sendOllamaRequest(oaiParams, onText) {
+    var body = JSON.parse(JSON.stringify(oaiParams));
+    delete body.oai_url;
+    delete body.oai_key;
+
+    var headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (oaiParams.oai_key && oaiParams.oai_key.trim() !== '') {
+      headers.Authorization = 'Bearer ' + oaiParams.oai_key;
+    }
+
+    var response = await fetch(oaiParams.oai_url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(await responseErrorMessage(response));
+    }
+
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var text = '';
+    var buffer = '';
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var endIndex;
+      while ((endIndex = buffer.indexOf('\n')) !== -1) {
+        var jsonString = buffer.slice(0, endIndex).trim();
+        buffer = buffer.slice(endIndex + 1);
+
+        if (!jsonString) {
+          continue;
+        }
+
+        try {
+          var data = JSON.parse(jsonString);
+          if (data.response) {
+            text += data.response;
+            onText(text);
+          }
+        } catch (error) {
+          console.error('Error parsing Ollama response:', error, 'Line:', jsonString);
+        }
+      }
+    }
+
+    return text;
+  }
+
+  async function sendGeminiRequest(oaiParams, onText) {
+    var url = oaiParams.oai_url + '?key=' + encodeURIComponent(oaiParams.oai_key || '') + '&alt=sse';
+    var body = {
+      systemInstruction: {
+        parts: [{ text: oaiParams.systemInstruction }]
+      },
+      contents: [{
+        parts: [{ text: oaiParams.prompt }]
+      }]
+    };
+
+    var response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(await responseErrorMessage(response));
+    }
+
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var text = '';
+    var buffer = '';
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var endIndex;
+      while ((endIndex = buffer.indexOf('\n')) !== -1) {
+        var line = buffer.slice(0, endIndex).trim();
+        buffer = buffer.slice(endIndex + 1);
+
+        if (!line || line.indexOf('data: ') !== 0) {
+          continue;
+        }
+
+        var jsonString = line.slice(6).trim();
+        try {
+          var data = JSON.parse(jsonString);
+          var parts = data.candidates && data.candidates[0] && data.candidates[0].content
+            ? data.candidates[0].content.parts
+            : null;
+          var chunkText = parts && parts[0] ? parts[0].text : '';
+          if (chunkText) {
+            text += chunkText;
+            onText(text);
+          }
+        } catch (error) {
+          console.error('Error parsing Gemini response:', error, 'Line:', jsonString);
+        }
+      }
+    }
+
+    return text;
+  }
+
+  async function responseErrorMessage(response) {
+    var fallback = response.statusText || 'Request Failed';
+    var bodyText = await response.text().catch(function () {
+      return '';
+    });
+
+    if (!bodyText) {
+      return fallback;
+    }
+
+    try {
+      var data = JSON.parse(bodyText);
+      return (data.error && data.error.message) || data.message || fallback;
+    } catch (error) {
+      return bodyText || fallback;
+    }
+  }
+})();

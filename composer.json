@@ -1,0 +1,22 @@
+{
+  "name": "codex/articletranslator-extension",
+  "description": "FreshRSS extension for AI paragraph-by-paragraph article translation",
+  "type": "freshrss-extension",
+  "require-dev": {
+    "phpstan/phpstan": "^1.10",
+    "phpunit/phpunit": "^10.0"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "phpstan": "phpstan analyse",
+    "ci": [
+      "@phpstan",
+      "@test"
+    ]
+  }
+}

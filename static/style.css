@@ -1,0 +1,132 @@
+:root {
+  --oai-translation-bg-color: #f8f8f8;
+  --oai-translation-border-color: #e0e0e0;
+  --oai-translation-text-color: #333;
+  --oai-translation-muted-color: #666;
+  --oai-translation-btn-bg: #6366f1;
+  --oai-translation-btn-text: #fff;
+  --oai-translation-btn-hover-bg: #4f46e5;
+  --oai-translation-radius: 8px;
+}
+
+.theme-nord :root {
+  --oai-translation-bg-color: #2e3440;
+  --oai-translation-border-color: #434c5e;
+  --oai-translation-text-color: #d8dee9;
+  --oai-translation-muted-color: #aeb6c5;
+  --oai-translation-btn-bg: #5e81ac;
+  --oai-translation-btn-text: #e5e9f0;
+  --oai-translation-btn-hover-bg: #81a1c1;
+}
+
+.oai-translation-wrap {
+  background: var(--oai-translation-bg-color, #f8f8f8);
+  padding: 1.2em;
+  margin-bottom: 1.5em;
+  border: 1px solid var(--oai-translation-border-color, #e0e0e0);
+  border-radius: var(--oai-translation-radius, 8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.oai-translation-btn {
+  font-size: 1.1em;
+  padding: 0.5em 1em;
+  margin-bottom: 0.5em;
+  background-color: var(--oai-translation-btn-bg, #6366f1);
+  color: var(--oai-translation-btn-text, #fff);
+  border: none;
+  border-radius: var(--oai-translation-radius, 6px);
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  font-weight: 500;
+}
+
+.oai-translation-btn:hover {
+  background-color: var(--oai-translation-btn-hover-bg, #4f46e5);
+}
+
+.oai-translation-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.oai-translation-status {
+  color: var(--oai-translation-muted-color, #666);
+  line-height: 1.5;
+}
+
+.oai-translation-result {
+  background: var(--oai-translation-bg-color, #f8f8f8);
+  color: var(--oai-translation-text-color, #333);
+  margin: 0.45em 0 1em;
+  padding: 0.85em 1em;
+  border: 1px solid var(--oai-translation-border-color, #e0e0e0);
+  border-left: 4px solid var(--oai-translation-btn-bg, #6366f1);
+  border-radius: var(--oai-translation-radius, 8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  line-height: 1.7;
+}
+
+.oai-title-translation {
+  margin-top: 0.55em;
+  margin-bottom: 0.75em;
+}
+
+li > .oai-translation-result {
+  margin-top: 0.55em;
+  margin-bottom: 0.6em;
+}
+
+.oai-translation-label {
+  margin-bottom: 0.35em;
+  color: var(--oai-translation-muted-color, #666);
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+.oai-translation-text {
+  color: var(--oai-translation-text-color, #333);
+}
+
+.oai-translation-text p:last-child,
+.oai-translation-text ul:last-child,
+.oai-translation-text ol:last-child {
+  margin-bottom: 0;
+}
+
+.oai-translation-loading .oai-translation-text::after {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: 2px solid rgba(99, 102, 241, 0.25);
+  border-radius: 50%;
+  border-top-color: var(--oai-translation-btn-bg, #6366f1);
+  vertical-align: -2px;
+  animation: oai-translation-spin 1s linear infinite;
+}
+
+.oai-loading .oai-translation-btn::after {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: oai-translation-spin 1s linear infinite;
+}
+
+.oai-error .oai-translation-status,
+.oai-translation-error .oai-translation-text {
+  color: #ef4444;
+}
+
+@keyframes oai-translation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
