@@ -119,7 +119,6 @@
   }
 
   function addFallbackBodySegments(segments, articleBody, container) {
-    var countBeforeFallback = segments.length;
     var candidates = fallbackContentCandidates(articleBody, container);
     candidates.forEach(function (child) {
       if (!isEligibleContentNode(child, container)) {
@@ -141,33 +140,53 @@
         text: text
       });
     });
-
-    if (segments.length === countBeforeFallback) {
-      var bodyText = readNodeText(articleBody);
-      if (isUsefulText(bodyText)) {
-        segments.push({
-          kind: 'paragraph',
-          source: container,
-          text: bodyText
-        });
-      }
-    }
   }
 
   function fallbackContentCandidates(articleBody, container) {
-    var children = Array.prototype.slice.call(articleBody.children).filter(function (node) {
-      return node !== container;
+    var candidates = [];
+    var walker = document.createTreeWalker(articleBody, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: function (node) {
+        if (node === container || !articleBody.contains(node)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        if (isPluginUiNode(node) || node.closest('script, style, noscript, pre, code')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        if (!node.matches || !node.matches('p, h1, h2, h3, h4, h5, h6, blockquote, li, div, section, article, main, table, tr, td, th')) {
+          return NodeFilter.FILTER_SKIP;
+        }
+
+        if (!isVisibleNode(node) || !isUsefulText(readNodeText(node))) {
+          return NodeFilter.FILTER_SKIP;
+        }
+
+        return hasTranslatableChildBlock(node) ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT;
+      }
     });
 
-    var nodes = children.filter(function (node) {
-      return node.matches && node.matches('div, section, article, main, table, pre');
-    });
-
-    if (nodes.length === 0) {
-      nodes = children;
+    var node;
+    while ((node = walker.nextNode())) {
+      candidates.push(node);
     }
 
-    return nodes;
+    return candidates;
+  }
+
+  function hasTranslatableChildBlock(node) {
+    var children = Array.prototype.slice.call(node.children);
+    return children.some(function (child) {
+      if (isPluginUiNode(child) || child.closest('script, style, noscript, pre, code')) {
+        return false;
+      }
+
+      if (!child.matches || !child.matches('p, h1, h2, h3, h4, h5, h6, blockquote, li, div, section, article, main, table, tr, td, th')) {
+        return false;
+      }
+
+      return isVisibleNode(child) && isUsefulText(readNodeText(child));
+    });
   }
 
   function isEligibleContentNode(node, container) {
