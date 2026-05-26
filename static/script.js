@@ -119,9 +119,10 @@
   }
 
   function addFallbackBodySegments(segments, articleBody, container) {
-    var children = Array.prototype.slice.call(articleBody.children);
-    children.forEach(function (child) {
-      if (child === container || !isEligibleContentNode(child, container)) {
+    var countBeforeFallback = segments.length;
+    var candidates = fallbackContentCandidates(articleBody, container);
+    candidates.forEach(function (child) {
+      if (!isEligibleContentNode(child, container)) {
         return;
       }
 
@@ -140,6 +141,33 @@
         text: text
       });
     });
+
+    if (segments.length === countBeforeFallback) {
+      var bodyText = readNodeText(articleBody);
+      if (isUsefulText(bodyText)) {
+        segments.push({
+          kind: 'paragraph',
+          source: container,
+          text: bodyText
+        });
+      }
+    }
+  }
+
+  function fallbackContentCandidates(articleBody, container) {
+    var children = Array.prototype.slice.call(articleBody.children).filter(function (node) {
+      return node !== container;
+    });
+
+    var nodes = children.filter(function (node) {
+      return node.matches && node.matches('div, section, article, main, table, pre');
+    });
+
+    if (nodes.length === 0) {
+      nodes = children;
+    }
+
+    return nodes;
   }
 
   function isEligibleContentNode(node, container) {
@@ -147,7 +175,11 @@
       return false;
     }
 
-    if (node.closest('.oai-translation-wrap, .oai-translation-result, script, style, noscript, pre, code')) {
+    if (isPluginUiNode(node)) {
+      return false;
+    }
+
+    if (node.closest('script, style, noscript, pre, code')) {
       return false;
     }
 
@@ -214,11 +246,15 @@
 
   function readNodeText(node) {
     var clone = node.cloneNode(true);
-    Array.prototype.slice.call(clone.querySelectorAll('.oai-translation-result, script, style, noscript')).forEach(function (child) {
+    Array.prototype.slice.call(clone.querySelectorAll('.oai-translation-wrap, .oai-translation-result, .oai-summary-wrap, script, style, noscript')).forEach(function (child) {
       child.remove();
     });
 
     return normalizeText(clone.textContent || '');
+  }
+
+  function isPluginUiNode(node) {
+    return Boolean(node.closest('.oai-translation-wrap, .oai-translation-result, .oai-summary-wrap'));
   }
 
   function normalizeText(text) {
