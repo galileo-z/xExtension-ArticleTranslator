@@ -176,7 +176,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
 
   private function normalizeBaseUrl(string $baseUrl, string $provider): string
   {
-    $baseUrl = rtrim($baseUrl, '/');
+    $baseUrl = rtrim(trim($baseUrl), '/');
 
     if ($provider === 'openai' || $provider === 'lmstudio') {
       $baseUrl = preg_replace('#/chat/completions$#', '', $baseUrl) ?? $baseUrl;

@@ -71,7 +71,7 @@
     var header = findFluxHeader(container);
     var titleNode = findTitleNode(header);
 
-    if (titleNode) {
+    if (titleNode && isVisibleNode(titleNode)) {
       var titleText = readNodeText(titleNode);
       if (isUsefulText(titleText)) {
         segments.push({
@@ -159,6 +159,10 @@
       return false;
     }
 
+    return isVisibleNode(node);
+  }
+
+  function isVisibleNode(node) {
     return node.getClientRects().length > 0;
   }
 
@@ -390,8 +394,17 @@
 
   function decodeHtmlEntities(value) {
     var textarea = document.createElement('textarea');
-    textarea.innerHTML = value;
-    return textarea.value;
+    var decoded = value;
+
+    for (var i = 0; i < 3; i++) {
+      textarea.innerHTML = decoded;
+      if (textarea.value === decoded) {
+        break;
+      }
+      decoded = textarea.value;
+    }
+
+    return decoded;
   }
 
   async function sendOpenAIRequest(oaiParams, onText) {
