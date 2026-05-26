@@ -14,6 +14,7 @@ AI 调用方式参考 `xExtension-ArticleSummary`：后端读取 FreshRSS 配置
 
 - AI 提供商：OpenAI、Ollama、Gemini 或 LM Studio
 - 基础 URL：不要带 `/v1`，插件会按提供商自动补齐
+- LM Studio 通常填写 `http://localhost:1234` 或 `http://localhost:1234/v1`。如果误填成 `http://localhost:1234/v1/chat/completions`，插件也会自动修正。
 - API 密钥：Ollama 和 LM Studio 可留空
 - 模型名称
 - 系统提示词：默认提示词会要求模型只输出简体中文译文，不总结、不解释、不合并段落

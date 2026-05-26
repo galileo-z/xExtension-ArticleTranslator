@@ -178,6 +178,10 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
   {
     $baseUrl = rtrim($baseUrl, '/');
 
+    if ($provider === 'openai' || $provider === 'lmstudio') {
+      $baseUrl = preg_replace('#/chat/completions$#', '', $baseUrl) ?? $baseUrl;
+    }
+
     if (preg_match('/\/v\d+(beta)?\/?$/', $baseUrl)) {
       return $baseUrl;
     }

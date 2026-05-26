@@ -349,16 +349,24 @@
   }
 
   async function requestProviderParams(button, segment) {
-    var response = await axios.post(button.dataset.request, {
-      ajax: true,
-      _csrf: context.csrf,
-      kind: segment.kind,
-      text: segment.text
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
+    var response;
+    try {
+      response = await axios.post(button.dataset.request, {
+        ajax: true,
+        _csrf: context.csrf,
+        kind: segment.kind,
+        text: segment.text
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+    } catch (error) {
+      if (error.response) {
+        throw new Error('FreshRSS translation endpoint returned HTTP ' + error.response.status + ': ' + button.dataset.request);
       }
-    });
+      throw error;
+    }
 
     var xresp = response.data;
     if (response.status !== 200 || !xresp || !xresp.response) {
@@ -400,7 +408,7 @@
     });
 
     if (!response.ok) {
-      throw new Error(await responseErrorMessage(response));
+      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
     }
 
     var contentType = response.headers.get('content-type') || '';
@@ -471,7 +479,7 @@
     });
 
     if (!response.ok) {
-      throw new Error(await responseErrorMessage(response));
+      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
     }
 
     var reader = response.body.getReader();
@@ -530,7 +538,7 @@
     });
 
     if (!response.ok) {
-      throw new Error(await responseErrorMessage(response));
+      throw new Error('AI API returned HTTP ' + response.status + ': ' + await responseErrorMessage(response) + '\n' + oaiParams.oai_url);
     }
 
     var reader = response.body.getReader();
@@ -586,7 +594,7 @@
 
     try {
       var data = JSON.parse(bodyText);
-      return (data.error && data.error.message) || data.message || fallback;
+      return (data.error && data.error.message) || data.error || data.message || fallback;
     } catch (error) {
       return bodyText || fallback;
     }
