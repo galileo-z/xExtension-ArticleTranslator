@@ -70,24 +70,23 @@
     var segments = [];
     var header = findFluxHeader(container);
     var titleNode = findTitleNode(header);
+    var titleText = '';
 
     if (titleNode && isVisibleNode(titleNode)) {
-      var titleText = readNodeText(titleNode);
-      if (isUsefulText(titleText)) {
-        segments.push({
-          kind: 'title',
-          source: titleNode,
-          text: titleText
-        });
-      }
-    } else if (isUsefulText(container.dataset.entryTitle || '')) {
+      titleText = readNodeText(titleNode);
+    } else {
+      titleText = container.dataset.entryTitle || '';
+    }
+
+    if (isUsefulText(titleText)) {
       segments.push({
         kind: 'title',
         source: container,
-        text: container.dataset.entryTitle
+        text: titleText
       });
     }
 
+    var bodySegmentStart = segments.length;
     var articleBody = container.parentElement;
     if (!articleBody) {
       return segments;
@@ -111,7 +110,7 @@
       });
     });
 
-    if (segments.length === (titleNode ? 1 : 0)) {
+    if (segments.length === bodySegmentStart) {
       addFallbackBodySegments(segments, articleBody, container);
     }
 
@@ -317,10 +316,10 @@
     block.appendChild(labelNode);
     block.appendChild(textNode);
 
-    if (segment.source.matches && segment.source.matches('li')) {
-      segment.source.appendChild(block);
-    } else if (segment.kind === 'title') {
+    if (segment.kind === 'title') {
       titleInsertAnchor(segment.source).insertAdjacentElement('afterend', block);
+    } else if (segment.source.matches && segment.source.matches('li')) {
+      segment.source.appendChild(block);
     } else {
       segment.source.insertAdjacentElement('afterend', block);
     }
