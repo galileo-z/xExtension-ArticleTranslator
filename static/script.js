@@ -349,9 +349,10 @@
   }
 
   async function requestProviderParams(button, segment) {
+    var requestUrl = decodeHtmlEntities(button.dataset.request || '');
     var response;
     try {
-      response = await axios.post(button.dataset.request, {
+      response = await axios.post(requestUrl, {
         ajax: true,
         _csrf: context.csrf,
         kind: segment.kind,
@@ -363,7 +364,7 @@
       });
     } catch (error) {
       if (error.response) {
-        throw new Error('FreshRSS translation endpoint returned HTTP ' + error.response.status + ': ' + button.dataset.request);
+        throw new Error('FreshRSS translation endpoint returned HTTP ' + error.response.status + ': ' + requestUrl);
       }
       throw error;
     }
@@ -385,6 +386,12 @@
       params: xresp.response.data,
       provider: xresp.response.provider
     };
+  }
+
+  function decodeHtmlEntities(value) {
+    var textarea = document.createElement('textarea');
+    textarea.innerHTML = value;
+    return textarea.value;
   }
 
   async function sendOpenAIRequest(oaiParams, onText) {

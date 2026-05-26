@@ -63,7 +63,7 @@ final class ArticleTranslatorExtension extends Minz_Extension
     $entry->_content(
       '<div class="oai-translation-wrap" data-entry-id="' . $this->escape($entry->id()) . '" '
       . 'data-entry-title="' . $this->escape($entry->title()) . '">'
-      . '<button type="button" data-request="' . $this->escape($translateUrl) . '" '
+      . '<button type="button" data-request="' . $translateUrl . '" '
       . 'data-translate-text="' . $this->escape($buttonText) . '" '
       . 'data-loading-text="' . $this->escape($loadingText) . '" '
       . 'data-done-text="' . $this->escape($doneText) . '" '
