@@ -212,9 +212,12 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
 
   private function translateGoogle(string $baseUrl, string $sourceText): string
   {
-    $url = trim($baseUrl) === ''
-      ? 'https://translate.googleapis.com/translate_a/single'
-      : rtrim(trim($baseUrl), '/');
+    $url = 'https://translate.googleapis.com/translate_a/single';
+    $customUrl = rtrim(trim($baseUrl), '/');
+    if ($customUrl !== '' && parse_url($customUrl, PHP_URL_HOST) === 'translate.googleapis.com') {
+      $url = $customUrl;
+    }
+
     if (!preg_match('#/translate_a/single$#', $url)) {
       $url .= '/translate_a/single';
     }
