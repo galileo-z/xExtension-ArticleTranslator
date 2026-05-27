@@ -143,8 +143,16 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
   /**
    * @param array<string, mixed> $body
    */
-  private function addOpenAiCompatibleThinking(array &$body, string $baseUrl, bool $thinkingEnabled): void
+  private function addOpenAiCompatibleThinking(array &$body, string $provider, string $baseUrl, bool $thinkingEnabled): void
   {
+    if ($provider === 'lmstudio') {
+      $body['reasoning_effort'] = $thinkingEnabled ? 'medium' : 'none';
+      if (!$thinkingEnabled) {
+        $body['reasoning_tokens'] = 0;
+      }
+      return;
+    }
+
     $host = strtolower((string)(parse_url($baseUrl, PHP_URL_HOST) ?: ''));
     if ($host === 'api.openai.com') {
       return;
@@ -197,10 +205,11 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       return $this->translateGemini($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
     }
 
-    return $this->translateOpenAiCompatible($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
+    return $this->translateOpenAiCompatible($provider, $baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
   }
 
   private function translateOpenAiCompatible(
+    string $provider,
     string $baseUrl,
     string $apiKey,
     string $model,
@@ -231,7 +240,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       'stream' => false,
     ];
 
-    $this->addOpenAiCompatibleThinking($body, $baseUrl, $thinkingEnabled);
+    $this->addOpenAiCompatibleThinking($body, $provider, $baseUrl, $thinkingEnabled);
     $json = $this->postJson($this->normalizeBaseUrl($baseUrl, 'openai') . '/chat/completions', $body, $headers);
 
     $content = $json['choices'][0]['message']['content'] ?? null;
