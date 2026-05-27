@@ -19,6 +19,9 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     $apiKey = FreshRSS_Context::$user_conf->article_translator_oai_key;
     $model = FreshRSS_Context::$user_conf->article_translator_oai_model;
     $systemPrompt = FreshRSS_Context::$user_conf->article_translator_prompt;
+    $thinking = $provider === 'google'
+      ? false
+      : $this->toBool(FreshRSS_Context::$user_conf->article_translator_thinking ?? false);
 
     if (!$this->hasRequiredConfig($provider, $baseUrl, $apiKey, $model, $systemPrompt)) {
       $this->jsonResponse([
@@ -64,6 +67,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
         (string)$model,
         (string)$systemPrompt,
         $userPrompt,
+        $thinking,
         $text
       );
 
@@ -126,6 +130,29 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     return $item === null || (is_string($item) && trim($item) === '');
   }
 
+  private function toBool(mixed $value): bool
+  {
+    if (is_string($value)) {
+      $value = strtolower(trim($value));
+      return in_array($value, ['1', 'true', 'on', 'yes'], true);
+    }
+
+    return $value === true || $value === 1;
+  }
+
+  /**
+   * @param array<string, mixed> $body
+   */
+  private function addOpenAiCompatibleThinking(array &$body, string $baseUrl, bool $thinkingEnabled): void
+  {
+    $host = strtolower((string)(parse_url($baseUrl, PHP_URL_HOST) ?: ''));
+    if ($host === 'api.openai.com') {
+      return;
+    }
+
+    $body['enable_thinking'] = $thinkingEnabled;
+  }
+
   private function allowsEmptyApiKey(string $provider): bool
   {
     return in_array($provider, ['ollama', 'lmstudio', 'google'], true);
@@ -155,6 +182,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     string $model,
     string $systemPrompt,
     string $userPrompt,
+    bool $thinkingEnabled,
     string $sourceText
   ): string {
     if ($provider === 'google') {
@@ -162,14 +190,14 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     }
 
     if ($provider === 'ollama') {
-      return $this->translateOllama($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+      return $this->translateOllama($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
     }
 
     if ($provider === 'gemini') {
-      return $this->translateGemini($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+      return $this->translateGemini($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
     }
 
-    return $this->translateOpenAiCompatible($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt);
+    return $this->translateOpenAiCompatible($baseUrl, $apiKey, $model, $systemPrompt, $userPrompt, $thinkingEnabled);
   }
 
   private function translateOpenAiCompatible(
@@ -177,14 +205,15 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     string $apiKey,
     string $model,
     string $systemPrompt,
-    string $userPrompt
+    string $userPrompt,
+    bool $thinkingEnabled
   ): string {
     $headers = ['Content-Type: application/json'];
     if (trim($apiKey) !== '') {
       $headers[] = 'Authorization: Bearer ' . $apiKey;
     }
 
-    $json = $this->postJson($this->normalizeBaseUrl($baseUrl, 'openai') . '/chat/completions', [
+    $body = [
       'model' => $model,
       'messages' => [
         [
@@ -200,7 +229,10 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       'temperature' => 0.2,
       'n' => 1,
       'stream' => false,
-    ], $headers);
+    ];
+
+    $this->addOpenAiCompatibleThinking($body, $baseUrl, $thinkingEnabled);
+    $json = $this->postJson($this->normalizeBaseUrl($baseUrl, 'openai') . '/chat/completions', $body, $headers);
 
     $content = $json['choices'][0]['message']['content'] ?? null;
     if (!is_string($content) || trim($content) === '') {
@@ -256,7 +288,8 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     string $apiKey,
     string $model,
     string $systemPrompt,
-    string $userPrompt
+    string $userPrompt,
+    bool $thinkingEnabled
   ): string {
     $headers = ['Content-Type: application/json'];
     if (trim($apiKey) !== '') {
@@ -268,6 +301,7 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       'system' => $systemPrompt,
       'prompt' => $userPrompt,
       'stream' => false,
+      'think' => $thinkingEnabled,
       'options' => [
         'temperature' => 0.2,
       ],
@@ -286,7 +320,8 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
     string $apiKey,
     string $model,
     string $systemPrompt,
-    string $userPrompt
+    string $userPrompt,
+    bool $thinkingEnabled
   ): string {
     $url = $this->normalizeBaseUrl($baseUrl, 'gemini') . '/models/' . rawurlencode($model) . ':generateContent';
     if (trim($apiKey) !== '') {
@@ -300,6 +335,11 @@ final class FreshExtension_ArticleTranslator_Controller extends Minz_ActionContr
       'contents' => [
         [
           'parts' => [['text' => $userPrompt]],
+        ],
+      ],
+      'generationConfig' => [
+        'thinkingConfig' => [
+          'thinkingBudget' => $thinkingEnabled ? -1 : 0,
         ],
       ],
     ], ['Content-Type: application/json']);

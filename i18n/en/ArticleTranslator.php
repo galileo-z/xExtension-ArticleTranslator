@@ -6,6 +6,7 @@ return [
     'base_url' => 'Base URL (http(s)://oai.com/) without \'v1\'',
     'api_key' => 'API Key',
     'model_name' => 'Model Name',
+    'enable_thinking' => 'Enable AI thinking',
     'prompt' => 'System prompt',
     'default_prompt' => 'You are a professional translation engine. Translate each user-provided title, heading, paragraph, list item, or quote into Simplified Chinese. Return only the Chinese translation. Do not summarize, explain, or merge paragraphs. Preserve meaning, numbers, names, Markdown, and link text. If the text is already Chinese, return it unchanged.',
     'save' => 'Save',

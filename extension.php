@@ -93,11 +93,17 @@ final class ArticleTranslatorExtension extends Minz_Extension
       $prompt = null;
     }
 
-    FreshRSS_Context::$user_conf->article_translator_provider = Minz_Request::param('article_translator_provider', 'openai');
+    $provider = Minz_Request::param('article_translator_provider', 'openai');
+    $thinking = $provider === 'google'
+      ? '0'
+      : (Minz_Request::param('article_translator_thinking', '') === '1' ? '1' : '0');
+
+    FreshRSS_Context::$user_conf->article_translator_provider = $provider;
     FreshRSS_Context::$user_conf->article_translator_oai_url = Minz_Request::param('article_translator_oai_url', '');
     FreshRSS_Context::$user_conf->article_translator_oai_key = Minz_Request::param('article_translator_oai_key', '');
     FreshRSS_Context::$user_conf->article_translator_oai_model = Minz_Request::param('article_translator_oai_model', '');
     FreshRSS_Context::$user_conf->article_translator_prompt = $prompt;
+    FreshRSS_Context::$user_conf->article_translator_thinking = $thinking;
 
     FreshRSS_Context::$user_conf->save();
   }
